@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import atexit
 import logging
 import mimetypes
 import os
 import string
+import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -19,9 +22,23 @@ def _has_binary_content(path: str) -> bool:
         return b"\x00" in f.read(1024)
 
 
+def _download_to_temp(url: str) -> str:
+    try:
+        with urllib.request.urlopen(url) as response:
+            suffix = os.path.splitext(urllib.parse.urlparse(url).path)[1] or ""
+            f = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            logging.info(f"Downloading {url} to temporary file {f.name}")
+            f.write(response.read())
+            f.close()
+            atexit.register(os.unlink, f.name)
+            return f.name
+    except urllib.error.URLError as e:
+        raise argparse.ArgumentTypeError(f"Could not reach URL: {url} ({e.reason})")
+
+
 def valid_text_file(path: str) -> str:
     if _is_url(path):
-        return path
+        path = _download_to_temp(path)
     if not os.path.exists(path):
         raise argparse.ArgumentTypeError(f"File not found: {path}")
     if not os.path.isfile(path):
@@ -36,18 +53,12 @@ def valid_text_file(path: str) -> str:
     return path
 
 
-def count_words(source: str) -> CounterDict:
-    if _is_url(source):
-        logging.info("Fetching URL: %s", source)
-        with urllib.request.urlopen(source) as response:
-            text = response.read().decode("utf-8")
-    else:
-        logging.info("Opening file: %s", source)
-        with open(source, "r") as f:
-            text = f.read()
+def count_words(path: str) -> CounterDict:
+    logging.info("Opening file: %s", path)
+    with open(path, "r") as f:
+        text = f.read()
 
     logging.info("Processing text content")
-
     counter_dict = CounterDict()
     for word in text.split():
         # strip trailing whitespace, and punctuation ("hello," becomes "hello")
@@ -60,20 +71,18 @@ def count_words(source: str) -> CounterDict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Count words in a text file.")
-    parser.add_argument("file", type=valid_text_file, help="Path to the text file")
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    # set logging to info
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s: %(message)s",
     )
+
+    parser = argparse.ArgumentParser(description="Count words in a text file.")
+    parser.add_argument("file", type=valid_text_file, help="Path to a text file or URL")
     parser.add_argument(
         "-k", "--top", type=int, metavar="K", default=20, help="Show the top K words by frequency"
     )
     args = parser.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s: %(message)s",
-    )
 
     counts = count_words(args.file)
 

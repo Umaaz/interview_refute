@@ -14,7 +14,6 @@ Counts word frequencies in a text file or URL and reports the top K most frequen
 |---|---|
 | `file` | Path to a text file or an `http`/`https` URL |
 | `-k K`, `--top K` | Show the top K words by frequency (default: 20) |
-| `-v`, `--verbose` | Enable verbose logging |
 
 ### Examples
 
